@@ -39,6 +39,7 @@ All answers are powered by [`source_Cv.md`](./source_Cv.md) in this repo.
 
 Secrets are stored in Azure KeyVault (`dp-kv-deliverypilot`) and injected as Fly.io secrets:
 - `NEXT_PUBLIC_GEMINI_API_KEY` — Gemini AI key from KeyVault `GEMINI-API-KEY-PRIMARY`
+- `NEXT_PUBLIC_XAI_API_KEY` — xAI (Grok) key from KeyVault `xai-api-key` (fallback when Gemini fails)
 - `N8N_API_KEY` — n8n API key from KeyVault `n8n-api-key`
 - `N8N_RTR_WEBHOOK_URL` — n8n webhook endpoint for RTR emails
 - `FLYIOTOKEN` — Fly.io deploy token from KeyVault `FLYIOTOKEN`

@@ -20,13 +20,56 @@ export default function AiAgent() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [provider, setProvider] = useState<"gemini" | "xai" | "fallback">("gemini");
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  const apiKey = typeof window !== "undefined" ? process.env.NEXT_PUBLIC_GEMINI_API_KEY || "" : "";
+  const geminiKey = typeof window !== "undefined" ? process.env.NEXT_PUBLIC_GEMINI_API_KEY || "" : "";
+  const xaiKey = typeof window !== "undefined" ? process.env.NEXT_PUBLIC_XAI_API_KEY || "" : "";
+
+  const callGemini = async (prompt: string): Promise<string | null> => {
+    if (!geminiKey) return null;
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${geminiKey}`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.3, maxOutputTokens: 2048 },
+        }),
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.candidates?.[0]?.content?.parts?.[0]?.text || null;
+  };
+
+  const callXai = async (prompt: string): Promise<string | null> => {
+    if (!xaiKey) return null;
+    const res = await fetch("https://api.x.ai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${xaiKey}`,
+      },
+      body: JSON.stringify({
+        model: "grok-2-latest",
+        messages: [
+          { role: "system", content: "You are a helpful recruiter agent for Rifat Erdem Sahin. Use the provided CV data to answer accurately and concisely." },
+          { role: "user", content: prompt },
+        ],
+        temperature: 0.3,
+        max_tokens: 2048,
+      }),
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data?.choices?.[0]?.message?.content || null;
+  };
 
   const sendMessage = async () => {
     if (!input.trim() || loading) return;
@@ -47,44 +90,33 @@ ${userText}
 
 Provide a helpful, professional answer. Use markdown formatting.`;
 
-      if (!apiKey) {
-        // Fallback response when no API key is configured
-        setMessages((prev) => [
-          ...prev,
-          {
-            role: "model",
-            text: `I am operating in fallback mode because no Gemini API key is configured. Here is what I know from the CV data about your question:
+      let reply: string | null = null;
+      let usedProvider: "gemini" | "xai" | "fallback" = "fallback";
+
+      // Try Gemini first
+      reply = await callGemini(prompt);
+      if (reply) {
+        usedProvider = "gemini";
+      } else {
+        // Fallback to xAI
+        reply = await callXai(prompt);
+        if (reply) {
+          usedProvider = "xai";
+        }
+      }
+
+      if (!reply) {
+        reply = `I am operating in fallback mode because no AI provider is available. Here is what I know from the CV data about your question:
 
 **Question:** ${userText}
 
 I have access to Rifat's full CV including his work at IBM (2025), Goldman Sachs (2024), Ypsomed (2023), Cushman & Wakefield (2022), Emerson (2021), and Microsoft (2016). He specializes in DevOps, AI/ML, Cloud Architecture (Azure/AWS/GCP), Kubernetes, Terraform, and holds UK SC and NATO security clearances.
 
-To enable full AI responses, configure a Gemini API key in the environment variables (NEXT_PUBLIC_GEMINI_API_KEY).`,
-          },
-        ]);
-        setLoading(false);
-        return;
+To enable full AI responses, configure a Gemini or xAI API key in the environment variables.`;
+        usedProvider = "fallback";
       }
 
-      const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.3, maxOutputTokens: 2048 },
-          }),
-        }
-      );
-
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(err);
-      }
-
-      const data = await res.json();
-      const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text || "I could not generate a response. Please try again.";
+      setProvider(usedProvider);
       setMessages((prev) => [...prev, { role: "model", text: reply }]);
     } catch (err: any) {
       setMessages((prev) => [
@@ -107,6 +139,8 @@ To enable full AI responses, configure a Gemini API key in the environment varia
       setTimeout(() => setCopied(false), 2000);
     }
   };
+
+  const providerLabel = provider === "gemini" ? "Gemini" : provider === "xai" ? "xAI (Grok)" : "Fallback";
 
   return (
     <section id="ai-agent" className="py-16 px-4 sm:px-6 lg:px-8 max-w-7xl mx-auto">
@@ -188,7 +222,7 @@ To enable full AI responses, configure a Gemini API key in the environment varia
           </div>
           <div className="mt-2 flex items-center gap-2 text-xs text-zinc-500">
             <Wand2 className="w-3 h-3" />
-            <span>Powered by Gemini. {apiKey ? "API key configured." : "API key not configured — running in fallback mode."}</span>
+            <span>Powered by {providerLabel}. {geminiKey ? "Gemini key configured." : ""} {xaiKey ? "xAI key configured." : ""}</span>
           </div>
         </div>
       </div>
